@@ -1,0 +1,477 @@
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Sparkles,
+  MessageSquare,
+  FileText,
+  Workflow,
+  Bot,
+  Store,
+  Users,
+  BarChart3,
+  Settings,
+  Menu,
+  X,
+  ChevronRight,
+  Zap,
+  Shield,
+  Layers,
+  ArrowRight,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+type View = "landing" | "login" | "signup" | "dashboard" | "chat" | "prompts" | "workflows" | "agents" | "marketplace" | "settings";
+
+const NAV = [
+  { id: "dashboard", label: "Dashboard", icon: Layers },
+  { id: "chat", label: "AI Chat", icon: MessageSquare },
+  { id: "prompts", label: "Prompts", icon: FileText },
+  { id: "workflows", label: "Workflows", icon: Workflow },
+  { id: "agents", label: "Agents", icon: Bot },
+  { id: "marketplace", label: "Marketplace", icon: Store },
+  { id: "settings", label: "Settings", icon: Settings },
+] as const;
+
+export default function App() {
+  const [view, setView] = useState<View>("landing");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  if (view === "landing") {
+    return <Landing onGetStarted={() => setView("signup")} onLogin={() => setView("login")} />;
+  }
+
+  if (view === "login" || view === "signup") {
+    return (
+      <AuthView
+        mode={view}
+        onSuccess={() => setView("dashboard")}
+        onSwitch={() => setView(view === "login" ? "signup" : "login")}
+        onBack={() => setView("landing")}
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-[#0a0a0b]">
+      <aside
+        className={cn(
+          "flex flex-col border-r border-white/5 bg-[#0c0c0e] transition-all duration-300",
+          sidebarOpen ? "w-64" : "w-16"
+        )}
+      >
+        <div className="flex h-16 items-center gap-3 border-b border-white/5 px-4">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary">
+            <Sparkles className="h-5 w-5 text-white" />
+          </div>
+          {sidebarOpen && (
+            <div>
+              <p className="text-sm font-semibold tracking-tight">Licarl</p>
+              <p className="text-[10px] text-muted-foreground">Prompt Maker</p>
+            </div>
+          )}
+        </div>
+
+        <nav className="flex-1 space-y-1 p-3">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            const active = view === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setView(item.id as View)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all",
+                  active
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {sidebarOpen && <span>{item.label}</span>}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="border-t border-white/5 p-3">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="flex w-full items-center justify-center rounded-lg p-2 text-muted-foreground hover:bg-white/5"
+          >
+            {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+          </button>
+        </div>
+      </aside>
+
+      <main className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex h-16 items-center justify-between border-b border-white/5 px-6">
+          <h1 className="text-lg font-semibold capitalize">{view}</h1>
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary to-accent" />
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-auto p-6">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={view}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+            >
+              {view === "dashboard" && <Dashboard />}
+              {view === "chat" && <ChatPlaceholder />}
+              {view === "prompts" && <PromptsPlaceholder />}
+              {view === "workflows" && <WorkflowsPlaceholder />}
+              {view === "agents" && <AgentsPlaceholder />}
+              {view === "marketplace" && <MarketplacePlaceholder />}
+              {view === "settings" && <SettingsPlaceholder />}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function Landing({ onGetStarted, onLogin }: { onGetStarted: () => void; onLogin: () => void }) {
+  return (
+    <div className="min-h-screen bg-[#050507] text-white">
+      <nav className="fixed top-0 z-50 w-full border-b border-white/5 bg-[#050507]/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <span className="font-semibold tracking-tight">Licarl</span>
+          </div>
+          <div className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
+            <a href="#features" className="hover:text-white transition">Features</a>
+            <a href="#pricing" className="hover:text-white transition">Pricing</a>
+            <a href="#docs" className="hover:text-white transition">Docs</a>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" onClick={onLogin}>Log in</Button>
+            <Button variant="gradient" onClick={onGetStarted}>Get Started</Button>
+          </div>
+        </div>
+      </nav>
+
+      <section className="relative overflow-hidden pt-32 pb-24">
+        <div className="absolute inset-0 bg-hero-glow" />
+        <div className="relative mx-auto max-w-5xl px-6 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-muted-foreground">
+              <Zap className="h-3 w-3 text-accent" />
+              The Complete AI Workspace
+            </div>
+            <h1 className="mb-6 text-5xl font-bold tracking-tight sm:text-6xl md:text-7xl">
+              Every model.
+              <br />
+              <span className="text-gradient">Every prompt.</span>
+              <br />
+              One workspace.
+            </h1>
+            <p className="mx-auto mb-10 max-w-2xl text-lg text-muted-foreground">
+              Create, optimize, test, automate and collaborate on AI prompts across OpenAI, Claude, Gemini, Grok and more — from a single professional platform built for teams and enterprises.
+            </p>
+            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+              <Button size="lg" variant="gradient" onClick={onGetStarted} className="gap-2">
+                Launch App <ArrowRight className="h-4 w-4" />
+              </Button>
+              <Button size="lg" variant="outline" onClick={onLogin}>
+                View Demo
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      <section id="features" className="mx-auto max-w-6xl px-6 py-24">
+        <div className="mb-16 text-center">
+          <h2 className="mb-4 text-3xl font-bold">Everything you need</h2>
+          <p className="text-muted-foreground">Prompt engineering, multi-model chat, agents, workflows and team collaboration — unified.</p>
+        </div>
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            { icon: MessageSquare, title: "Multi-Provider Chat", desc: "Chat with every major model from one interface. Switch providers mid-conversation." },
+            { icon: FileText, title: "Prompt Builder", desc: "Professional editor with variables, versioning, templates and Monaco-powered syntax." },
+            { icon: Workflow, title: "Workflow Automation", desc: "Chain AI steps visually. Variables flow between stages. Schedule and share." },
+            { icon: Bot, title: "AI Agents", desc: "System prompts, memory, tools and knowledge bases. Build specialized agents." },
+            { icon: Store, title: "Marketplace", desc: "Discover, publish and install community prompts. Rate and review." },
+            { icon: Shield, title: "Enterprise Security", desc: "Encrypted API keys, RBAC, audit logs, SSO-ready architecture." },
+          ].map((f, i) => (
+            <motion.div
+              key={f.title}
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              viewport={{ once: true }}
+              className="glass-card p-6"
+            >
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                <f.icon className="h-5 w-5" />
+              </div>
+              <h3 className="mb-2 font-semibold">{f.title}</h3>
+              <p className="text-sm text-muted-foreground">{f.desc}</p>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-4xl px-6 py-24 text-center">
+        <div className="glass-card p-12">
+          <h2 className="mb-4 text-3xl font-bold">Ready to own your AI stack?</h2>
+          <p className="mb-8 text-muted-foreground">Join engineers and teams who refuse to be locked into a single provider.</p>
+          <Button size="lg" variant="gradient" onClick={onGetStarted} className="gap-2">
+            Get Started Free <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </section>
+
+      <footer className="border-t border-white/5 py-12 text-center text-sm text-muted-foreground">
+        © 2026 Licarl. The Complete AI Workspace.
+      </footer>
+    </div>
+  );
+}
+
+function AuthView({
+  mode,
+  onSuccess,
+  onSwitch,
+  onBack,
+}: {
+  mode: "login" | "signup";
+  onSuccess: () => void;
+  onSwitch: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#050507] px-4">
+      <div className="w-full max-w-md">
+        <button onClick={onBack} className="mb-8 text-sm text-muted-foreground hover:text-white">
+          ← Back
+        </button>
+        <div className="glass-card p-8">
+          <div className="mb-8 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary">
+              <Sparkles className="h-6 w-6 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold">{mode === "login" ? "Welcome back" : "Create account"}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {mode === "login" ? "Sign in to your Licarl workspace" : "Start building with every AI model"}
+            </p>
+          </div>
+
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSuccess();
+            }}
+          >
+            {mode === "signup" && (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Name</label>
+                <input
+                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+                  placeholder="Alex Rivera"
+                />
+              </div>
+            )}
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Email</label>
+              <input
+                type="email"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+                placeholder="you@company.com"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Password</label>
+              <input
+                type="password"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30"
+                placeholder="••••••••"
+              />
+            </div>
+            <Button type="submit" variant="gradient" className="w-full">
+              {mode === "login" ? "Sign in" : "Create account"}
+            </Button>
+          </form>
+
+          <div className="my-6 flex items-center gap-3">
+            <div className="h-px flex-1 bg-white/10" />
+            <span className="text-xs text-muted-foreground">or continue with</span>
+            <div className="h-px flex-1 bg-white/10" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Button variant="outline" className="w-full">Google</Button>
+            <Button variant="outline" className="w-full">GitHub</Button>
+          </div>
+
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            {mode === "login" ? "No account?" : "Already have an account?"}{" "}
+            <button onClick={onSwitch} className="text-primary hover:underline">
+              {mode === "login" ? "Sign up" : "Sign in"}
+            </button>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard() {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: "Prompts", value: "128", change: "+12%" },
+          { label: "Chats this week", value: "47", change: "+8%" },
+          { label: "Tokens used", value: "1.2M", change: "+23%" },
+          { label: "Est. cost", value: "$18.40", change: "-4%" },
+        ].map((stat) => (
+          <div key={stat.label} className="glass-card p-5">
+            <p className="text-xs text-muted-foreground">{stat.label}</p>
+            <p className="mt-1 text-2xl font-semibold">{stat.value}</p>
+            <p className="mt-1 text-xs text-accent">{stat.change}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="glass-card p-6">
+          <h3 className="mb-4 font-semibold">Recent Prompts</h3>
+          <div className="space-y-3">
+            {["System prompt — Code reviewer", "Marketing copy generator", "SQL query explainer", "RAG context injector"].map((t) => (
+              <div key={t} className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2.5 text-sm">
+                <span>{t}</span>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="glass-card p-6">
+          <h3 className="mb-4 font-semibold">Connected Providers</h3>
+          <div className="grid grid-cols-2 gap-2">
+            {["OpenAI", "Claude", "Gemini", "Grok", "DeepSeek", "Mistral"].map((p) => (
+              <div key={p} className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-sm">
+                <div className="h-2 w-2 rounded-full bg-emerald-400" />
+                {p}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChatPlaceholder() {
+  return (
+    <div className="glass-card flex h-[70vh] flex-col">
+      <div className="border-b border-white/5 p-4 text-sm font-medium">New Conversation · GPT-4o</div>
+      <div className="flex flex-1 items-center justify-center text-muted-foreground">
+        <div className="text-center">
+          <MessageSquare className="mx-auto mb-3 h-10 w-10 opacity-40" />
+          <p>Multi-provider chat with streaming, attachments, folders & model switching</p>
+          <p className="mt-1 text-xs">Implementation ready for OpenAI / Anthropic / Gemini / Grok adapters</p>
+        </div>
+      </div>
+      <div className="border-t border-white/5 p-4">
+        <div className="flex gap-2">
+          <input
+            className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none focus:border-primary/40"
+            placeholder="Message any model..."
+          />
+          <Button variant="gradient">Send</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PromptsPlaceholder() {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Prompt Library</h2>
+        <Button variant="gradient">New Prompt</Button>
+      </div>
+      <div className="glass-card p-6">
+        <p className="text-muted-foreground">
+          Monaco editor · Variables · Templates · Version history · Categories · Tags · Favorites · Share · Optimize · Test across models
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowsPlaceholder() {
+  return (
+    <div className="glass-card flex h-[60vh] items-center justify-center p-8 text-center text-muted-foreground">
+      <div>
+        <Workflow className="mx-auto mb-3 h-10 w-10 opacity-40" />
+        <p className="font-medium text-foreground">Visual Workflow Builder</p>
+        <p className="mt-1 text-sm">Chain steps: Generate → Summarize → Translate → SEO → Social posts</p>
+        <p className="mt-1 text-xs">Supports {`{{input}}`} and {`{{step_n.output}}`} variables</p>
+      </div>
+    </div>
+  );
+}
+
+function AgentsPlaceholder() {
+  return (
+    <div className="glass-card flex h-[60vh] items-center justify-center p-8 text-center text-muted-foreground">
+      <div>
+        <Bot className="mx-auto mb-3 h-10 w-10 opacity-40" />
+        <p className="font-medium text-foreground">AI Agents</p>
+        <p className="mt-1 text-sm">System prompts · Memory · Knowledge base · Tools · Temperature · Personality</p>
+      </div>
+    </div>
+  );
+}
+
+function MarketplacePlaceholder() {
+  return (
+    <div className="glass-card flex h-[60vh] items-center justify-center p-8 text-center text-muted-foreground">
+      <div>
+        <Store className="mx-auto mb-3 h-10 w-10 opacity-40" />
+        <p className="font-medium text-foreground">Prompt Marketplace</p>
+        <p className="mt-1 text-sm">Browse · Publish · Install · Rate · Trending · Featured creators</p>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPlaceholder() {
+  return (
+    <div className="max-w-2xl space-y-6">
+      <div className="glass-card p-6">
+        <h3 className="mb-4 font-semibold">API Keys</h3>
+        <p className="mb-4 text-sm text-muted-foreground">Connect your own keys or use managed Licarl models. Keys are encrypted at rest.</p>
+        <div className="space-y-3">
+          {["OpenAI", "Anthropic", "Google AI", "xAI (Grok)"].map((p) => (
+            <div key={p} className="flex items-center justify-between rounded-lg border border-white/5 bg-white/5 px-4 py-3">
+              <span className="text-sm">{p}</span>
+              <Button size="sm" variant="outline">Connect</Button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="glass-card p-6">
+        <h3 className="mb-2 font-semibold">Appearance</h3>
+        <p className="text-sm text-muted-foreground">Dark mode is the default. Theme, language and density controls go here.</p>
+      </div>
+    </div>
+  );
+}
