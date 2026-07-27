@@ -1,95 +1,159 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { getProvider } from "../providers/registry.js";
+import { getDecryptedKey, getKeyRecord, markKeyResult } from "../lib/keys.js";
 
 const chat = new Hono();
+const DEMO_USER = "demo-user";
 
 const ChatSchema = z.object({
   messages: z.array(
     z.object({
-      role: z.enum(["user", "assistant", "system"]),
+      role: z.enum(["system", "user", "assistant"]),
       content: z.string(),
     })
   ),
   provider: z.string(),
   model: z.string(),
   temperature: z.number().min(0).max(2).optional().default(0.7),
+  maxTokens: z.number().optional(),
   stream: z.boolean().optional().default(true),
+  apiKey: z.string().optional(),
 });
 
-/**
- * POST /api/v1/chat/completions
- * Multi-provider chat endpoint.
- * In production: route to OpenAI / Anthropic / Gemini / xAI / etc. adapters
- * based on `provider`, stream SSE tokens back.
- */
 chat.post("/completions", async (c) => {
   const body = await c.req.json();
   const parsed = ChatSchema.safeParse(body);
-
   if (!parsed.success) {
     return c.json({ error: "Invalid request", details: parsed.error.flatten() }, 400);
   }
 
-  const { messages, provider, model, temperature, stream } = parsed.data;
-  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const { messages, provider: providerId, model, temperature, maxTokens, stream, apiKey: bodyKey } =
+    parsed.data;
 
-  const reply = {
-    id: `chatcmpl-${crypto.randomUUID().slice(0, 8)}`,
-    object: "chat.completion",
-    created: Math.floor(Date.now() / 1000),
-    model,
-    provider,
-    choices: [
-      {
-        index: 0,
-        message: {
-          role: "assistant",
-          content: `Scaffold reply from ${provider}/${model} (temp=${temperature}).\n\nYou said: "${lastUser?.content ?? ""}"\n\nWire the real adapter for this provider next.`,
-        },
-        finish_reason: "stop",
-      },
-    ],
-    usage: {
-      prompt_tokens: 42,
-      completion_tokens: 28,
-      total_tokens: 70,
-    },
-  };
-
-  if (stream) {
-    c.header("Content-Type", "text/event-stream");
-    c.header("Cache-Control", "no-cache");
-    c.header("Connection", "keep-alive");
-
-    const encoder = new TextEncoder();
-    const streamBody = new ReadableStream({
-      start(controller) {
-        const content = reply.choices[0].message.content;
-        const chunks = content.split(" ");
-        let i = 0;
-        const interval = setInterval(() => {
-          if (i >= chunks.length) {
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            controller.close();
-            clearInterval(interval);
-            return;
-          }
-          const delta = (i === 0 ? "" : " ") + chunks[i];
-          const payload = {
-            id: reply.id,
-            object: "chat.completion.chunk",
-            choices: [{ index: 0, delta: { content: delta }, finish_reason: null }],
-          };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
-          i++;
-        }, 30);
-      },
-    });
-
-    return c.body(streamBody);
+  const provider = getProvider(providerId);
+  if (!provider) {
+    return c.json({ error: `Unknown provider: ${providerId}` }, 400);
   }
 
-  return c.json(reply);
+  const apiKey = bodyKey || getDecryptedKey(providerId, DEMO_USER);
+  if (!apiKey) {
+    return c.json(
+      { error: `No API key for provider "${providerId}". Add one via Settings → API Keys.` },
+      401
+    );
+  }
+
+  const record = getKeyRecord(providerId, DEMO_USER);
+  const start = Date.now();
+
+  try {
+    if (stream) {
+      c.header("Content-Type", "text/event-stream");
+      c.header("Cache-Control", "no-cache");
+      c.header("Connection", "keep-alive");
+      c.header("X-Accel-Buffering", "no");
+
+      const encoder = new TextEncoder();
+      const readable = new ReadableStream({
+        async start(controller) {
+          try {
+            let usage = null as
+              | { promptTokens: number; completionTokens: number; totalTokens: number }
+              | null;
+            for await (const chunk of provider.chatStream(
+              { messages, model, temperature, maxTokens, stream: true },
+              apiKey
+            )) {
+              if (chunk.usage) usage = chunk.usage;
+              const payload = {
+                id: chunk.id,
+                object: "chat.completion.chunk",
+                provider: providerId,
+                model,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: chunk.delta },
+                    finish_reason: chunk.finishReason,
+                  },
+                ],
+                usage: chunk.usage
+                  ? {
+                      prompt_tokens: chunk.usage.promptTokens,
+                      completion_tokens: chunk.usage.completionTokens,
+                      total_tokens: chunk.usage.totalTokens,
+                    }
+                  : undefined,
+              };
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+            }
+            const latencyMs = Date.now() - start;
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  id: "meta",
+                  object: "licarl.meta",
+                  latencyMs,
+                  estimatedCostUsd: usage ? provider.estimateCost(usage, model) : null,
+                })}\n\n`
+              )
+            );
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            if (record) markKeyResult(record.id, { success: true, latencyMs });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`)
+            );
+            if (record) {
+              markKeyResult(record.id, {
+                success: false,
+                latencyMs: Date.now() - start,
+                error: msg,
+              });
+            }
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return c.body(readable);
+    }
+
+    const result = await provider.chat(
+      { messages, model, temperature, maxTokens, stream: false },
+      apiKey
+    );
+    if (record) markKeyResult(record.id, { success: true, latencyMs: result.latencyMs });
+    return c.json({
+      id: result.id,
+      object: "chat.completion",
+      provider: result.provider,
+      model: result.model,
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: result.content },
+          finish_reason: result.finishReason,
+        },
+      ],
+      usage: {
+        prompt_tokens: result.usage.promptTokens,
+        completion_tokens: result.usage.completionTokens,
+        total_tokens: result.usage.totalTokens,
+      },
+      latencyMs: result.latencyMs,
+      estimatedCostUsd: result.estimatedCostUsd,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (record) {
+      markKeyResult(record.id, { success: false, latencyMs: Date.now() - start, error: msg });
+    }
+    return c.json({ error: msg }, 502);
+  }
 });
 
 export default chat;
