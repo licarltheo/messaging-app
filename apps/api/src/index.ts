@@ -5,6 +5,10 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import chat from "./routes/chat.js";
 import prompts from "./routes/prompts.js";
+import keys from "./routes/keys.js";
+import tester from "./routes/tester.js";
+import health from "./routes/health.js";
+import { getAllProviderIds, getProvider } from "./providers/registry.js";
 
 const app = new Hono();
 
@@ -18,32 +22,31 @@ app.use(
   })
 );
 
-app.get("/health", (c) => c.json({ status: "ok", service: "licarl-api", version: "1.0.0" }));
-
-app.get("/api/v1/providers", (c) =>
-  c.json({
-    providers: [
-      { id: "openai", name: "OpenAI", models: ["gpt-4o", "gpt-4o-mini", "o1", "o1-mini"] },
-      { id: "anthropic", name: "Claude", models: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229"] },
-      { id: "google", name: "Gemini", models: ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"] },
-      { id: "xai", name: "Grok", models: ["grok-2", "grok-2-mini", "grok-beta"] },
-      { id: "deepseek", name: "DeepSeek", models: ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"] },
-      { id: "mistral", name: "Mistral", models: ["mistral-large-latest", "codestral-latest"] },
-      { id: "openrouter", name: "OpenRouter", models: ["auto"] },
-      { id: "ollama", name: "Ollama", models: ["llama3.1", "qwen2.5", "mistral"] },
-    ],
-  })
+app.get("/health", (c) =>
+  c.json({ status: "ok", service: "licarl-api", version: "1.1.0", providers: getAllProviderIds() })
 );
+
+app.get("/api/v1/providers", (c) => {
+  const list = getAllProviderIds().map((id) => {
+    const p = getProvider(id)!;
+    return { id: p.id, name: p.name, supportsStreaming: p.supportsStreaming };
+  });
+  return c.json({ providers: list });
+});
 
 app.route("/api/v1/chat", chat);
 app.route("/api/v1/prompts", prompts);
+app.route("/api/v1/keys", keys);
+app.route("/api/v1/test", tester);
+app.route("/api/v1/status", health);
 
 app.get("/api/v1/me", (c) =>
   c.json({ message: "Attach Supabase JWT middleware to protect this route" })
 );
 
 const port = Number(process.env.PORT) || 8787;
-console.log(`Licarl API running on http://localhost:${port}`);
+console.log(`Licarl API v1.1 running on http://localhost:${port}`);
+console.log(`Providers: ${getAllProviderIds().join(", ")}`);
 
 serve({
   fetch: app.fetch,
