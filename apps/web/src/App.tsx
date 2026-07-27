@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ChatInterface } from "@/components/chat/ChatInterface";
+import { PromptEditor } from "@/components/prompt/PromptEditor";
 
 type View = "landing" | "login" | "signup" | "dashboard" | "chat" | "prompts" | "workflows" | "agents" | "marketplace" | "settings";
 
@@ -122,7 +124,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
             >
               {view === "dashboard" && <Dashboard />}
-              {view === "chat" && <ChatPlaceholder />}
+              {view === "chat" && <ChatInterface />}
               {view === "prompts" && <PromptsPlaceholder />}
               {view === "workflows" && <WorkflowsPlaceholder />}
               {view === "agents" && <AgentsPlaceholder />}
@@ -376,42 +378,20 @@ function Dashboard() {
   );
 }
 
-function ChatPlaceholder() {
-  return (
-    <div className="glass-card flex h-[70vh] flex-col">
-      <div className="border-b border-white/5 p-4 text-sm font-medium">New Conversation · GPT-4o</div>
-      <div className="flex flex-1 items-center justify-center text-muted-foreground">
-        <div className="text-center">
-          <MessageSquare className="mx-auto mb-3 h-10 w-10 opacity-40" />
-          <p>Multi-provider chat with streaming, attachments, folders & model switching</p>
-          <p className="mt-1 text-xs">Implementation ready for OpenAI / Anthropic / Gemini / Grok adapters</p>
-        </div>
-      </div>
-      <div className="border-t border-white/5 p-4">
-        <div className="flex gap-2">
-          <input
-            className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none focus:border-primary/40"
-            placeholder="Message any model..."
-          />
-          <Button variant="gradient">Send</Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function PromptsPlaceholder() {
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Prompt Library</h2>
-        <Button variant="gradient">New Prompt</Button>
-      </div>
-      <div className="glass-card p-6">
-        <p className="text-muted-foreground">
-          Monaco editor · Variables · Templates · Version history · Categories · Tags · Favorites · Share · Optimize · Test across models
-        </p>
-      </div>
+    <div className="h-[calc(100vh-8rem)]">
+      <PromptEditor
+        onSave={(data) => {
+          console.log("Save prompt", data);
+        }}
+        onTest={(content) => {
+          console.log("Test prompt", content);
+        }}
+        onOptimize={(content) => {
+          console.log("Optimize", content);
+        }}
+      />
     </div>
   );
 }
