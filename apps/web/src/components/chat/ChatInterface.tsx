@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { useProvidersStore } from "@/stores/providers";
 import {
@@ -14,6 +14,8 @@ import {
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8787";
+
 type Message = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -22,6 +24,8 @@ type Message = {
   provider?: string;
   tokens?: number;
   latencyMs?: number;
+  costUsd?: number | null;
+  error?: string;
 };
 
 export function ChatInterface() {
@@ -40,7 +44,7 @@ export function ChatInterface() {
 
   const currentProvider = providers.find((p) => p.id === activeProvider);
 
-  const sendMessage = async () => {
+  const sendMessage = useCallback(async () => {
     if (!input.trim() || streaming) return;
 
     const userMsg: Message = {
@@ -48,6 +52,11 @@ export function ChatInterface() {
       role: "user",
       content: input.trim(),
     };
+    const history = [...messages, userMsg].map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
     setMessages((m) => [...m, userMsg]);
     setInput("");
     setStreaming(true);
@@ -64,27 +73,124 @@ export function ChatInterface() {
       },
     ]);
 
-    const demoResponse = `This is a **scaffold response** from **${activeModel}** (${currentProvider?.name}).\n\nIn production this streams from the selected provider adapter:\n\n- OpenAI / Azure OpenAI\n- Anthropic Claude\n- Google Gemini\n- xAI Grok\n- DeepSeek, Mistral, OpenRouter, Ollama\n\nYour message was:\n> ${userMsg.content}\n\nWire the real SSE/streaming endpoint at /api/v1/chat/completions to complete this.`;
-
     abortRef.current = new AbortController();
-    const words = demoResponse.split(" ");
-    let acc = "";
-    for (const word of words) {
-      if (abortRef.current.signal.aborted) break;
-      acc += (acc ? " " : "") + word;
+
+    try {
+      const res = await fetch(`${API_URL}/api/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: history,
+          provider: activeProvider,
+          model: activeModel,
+          stream: true,
+          temperature: 0.7,
+        }),
+        signal: abortRef.current.signal,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      if (!res.body) throw new Error("No response body");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let acc = "";
+      let meta: { latencyMs?: number; estimatedCostUsd?: number | null } = {};
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const payload = trimmed.slice(5).trim();
+          if (payload === "[DONE]") continue;
+
+          try {
+            const json = JSON.parse(payload);
+            if (json.error) throw new Error(json.error);
+            if (json.object === "licarl.meta") {
+              meta = { latencyMs: json.latencyMs, estimatedCostUsd: json.estimatedCostUsd };
+              continue;
+            }
+            const delta = json.choices?.[0]?.delta?.content ?? "";
+            if (delta) {
+              acc += delta;
+              setMessages((m) =>
+                m.map((msg) =>
+                  msg.id === assistantId ? { ...msg, content: acc } : msg
+                )
+              );
+            }
+            if (json.usage) {
+              setMessages((m) =>
+                m.map((msg) =>
+                  msg.id === assistantId
+                    ? { ...msg, tokens: json.usage.total_tokens }
+                    : msg
+                )
+              );
+            }
+          } catch (e) {
+            if (e instanceof SyntaxError) continue;
+            throw e;
+          }
+        }
+      }
+
       setMessages((m) =>
         m.map((msg) =>
-          msg.id === assistantId ? { ...msg, content: acc } : msg
+          msg.id === assistantId
+            ? {
+                ...msg,
+                content: acc,
+                latencyMs: meta.latencyMs,
+                costUsd: meta.estimatedCostUsd,
+              }
+            : msg
         )
       );
-      await new Promise((r) => setTimeout(r, 25));
+    } catch (err) {
+      if ((err as Error).name === "AbortError") {
+        // user stopped
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        setMessages((m) =>
+          m.map((x) =>
+            x.id === assistantId
+              ? { ...x, content: x.content || "", error: msg }
+              : x
+          )
+        );
+      }
+    } finally {
+      setStreaming(false);
     }
-    setStreaming(false);
-  };
+  }, [input, streaming, messages, activeProvider, activeModel]);
 
   const stopStreaming = () => {
     abortRef.current?.abort();
     setStreaming(false);
+  };
+
+  const retryLast = () => {
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser || streaming) return;
+    setMessages((m) => {
+      const copy = [...m];
+      if (copy[copy.length - 1]?.role === "assistant") copy.pop();
+      return copy;
+    });
+    setInput(lastUser.content);
   };
 
   return (
@@ -102,13 +208,11 @@ export function ChatInterface() {
           </button>
 
           {showModelPicker && (
-            <div className="absolute left-0 top-full z-50 mt-2 w-72 rounded-xl border border-white/10 bg-[#0c0c0e] p-2 shadow-2xl">
+            <div className="absolute left-0 top-full z-50 mt-2 max-h-80 w-80 overflow-y-auto rounded-xl border border-white/10 bg-[#0c0c0e] p-2 shadow-2xl">
               {providers.map((p) => (
                 <div key={p.id} className="mb-1">
                   <button
-                    onClick={() => {
-                      setActiveProvider(p.id);
-                    }}
+                    onClick={() => setActiveProvider(p.id)}
                     className={cn(
                       "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm",
                       activeProvider === p.id ? "bg-primary/15 text-primary" : "hover:bg-white/5"
@@ -146,12 +250,7 @@ export function ChatInterface() {
           )}
         </div>
         <div className="flex-1" />
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => setMessages([])}
-          disabled={messages.length === 0}
-        >
+        <Button size="sm" variant="ghost" onClick={() => setMessages([])} disabled={messages.length === 0}>
           Clear
         </Button>
       </div>
@@ -162,7 +261,8 @@ export function ChatInterface() {
             <Bot className="mb-3 h-10 w-10 opacity-40" />
             <p className="font-medium text-foreground">Start a conversation</p>
             <p className="mt-1 max-w-sm text-sm">
-              Switch providers anytime. Attachments, regenerate, and export coming next.
+              Real streaming from OpenAI, Claude, Gemini, Grok, DeepSeek, Mistral, Groq, Together, OpenRouter, Cohere, Ollama.
+              Add API keys in Settings.
             </p>
           </div>
         )}
@@ -170,10 +270,7 @@ export function ChatInterface() {
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={cn(
-              "flex gap-3",
-              msg.role === "user" ? "justify-end" : "justify-start"
-            )}
+            className={cn("flex gap-3", msg.role === "user" ? "justify-end" : "justify-start")}
           >
             {msg.role === "assistant" && (
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15">
@@ -188,22 +285,32 @@ export function ChatInterface() {
                   : "bg-white/5 border border-white/5"
               )}
             >
+              {msg.error && (
+                <p className="mb-2 text-xs text-red-400">{msg.error}</p>
+              )}
               {msg.role === "assistant" ? (
                 <div className="prose prose-invert prose-sm max-w-none">
-                  <ReactMarkdown>{msg.content || "…"}</ReactMarkdown>
+                  <ReactMarkdown>{msg.content || (streaming ? "…" : "")}</ReactMarkdown>
                 </div>
               ) : (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               )}
               {msg.role === "assistant" && msg.content && (
-                <div className="mt-2 flex gap-1 border-t border-white/5 pt-2">
+                <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/5 pt-2 text-[10px] text-muted-foreground">
+                  {msg.latencyMs != null && <span>{msg.latencyMs}ms</span>}
+                  {msg.tokens != null && <span>{msg.tokens} tok</span>}
+                  {msg.costUsd != null && <span>${msg.costUsd.toFixed(5)}</span>}
+                  <div className="flex-1" />
                   <button
-                    className="rounded p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    className="rounded p-1 hover:bg-white/5 hover:text-foreground"
                     onClick={() => navigator.clipboard.writeText(msg.content)}
                   >
                     <Copy className="h-3.5 w-3.5" />
                   </button>
-                  <button className="rounded p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground">
+                  <button
+                    className="rounded p-1 hover:bg-white/5 hover:text-foreground"
+                    onClick={retryLast}
+                  >
                     <RefreshCw className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -220,7 +327,7 @@ export function ChatInterface() {
       </div>
 
       <div className="mt-4 flex gap-2">
-        <Button size="icon" variant="outline" className="shrink-0">
+        <Button size="icon" variant="outline" className="shrink-0" disabled>
           <Paperclip className="h-4 w-4" />
         </Button>
         <input
