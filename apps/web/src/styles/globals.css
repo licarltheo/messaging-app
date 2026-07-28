@@ -31,7 +31,7 @@
     @apply bg-white/5 backdrop-blur-xl border border-white/10 shadow-xl;
   }
   .glass-card {
-    @apply bg-gradient-to-b from-white/8 to-white/3 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl;
+    @apply bg-gradient-to-b from-white/10 to-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl;
   }
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-secondary to-accent;
