@@ -50,7 +50,7 @@ export default function App() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  if (view === "landing") return <Landing onGetStarted={() => setView("signup")} onLogin={() => setView("login")} />;
+  if (view === "landing") return <Landing onGetStarted={() => setView("dashboard")} onLogin={() => setView("login")} />;
   if (view === "login" || view === "signup") {
     return (
       <AuthView
